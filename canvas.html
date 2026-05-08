@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Drawing Canvas</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 16px;
+      font-size: 22px;
+      color: #333;
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 16px;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      width: 100%;
+      max-width: 800px;
+    }
+
+    #toolbar label {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .tool-btn {
+      padding: 7px 14px;
+      font-size: 13px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      color: #333;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .tool-btn:hover { background: #e8e8e8; }
+
+    .tool-btn.active {
+      background: #534AB7;
+      color: #fff;
+      border-color: #534AB7;
+    }
+
+    #clearBtn {
+      color: #c0392b;
+      border-color: #e99;
+    }
+
+    #clearBtn:hover { background: #fdecea; }
+
+    input[type="color"] {
+      width: 34px;
+      height: 34px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 2px;
+      background: none;
+    }
+
+    input[type="range"] {
+      width: 90px;
+      cursor: pointer;
+    }
+
+    #sizeOut {
+      font-size: 13px;
+      min-width: 20px;
+      color: #666;
+    }
+
+    .divider {
+      width: 1px;
+      height: 26px;
+      background: #ddd;
+    }
+
+    #canvas {
+      display: block;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      background: #ffffff;
+      cursor: crosshair;
+      width: 100%;
+      max-width: 800px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🎨 Drawing Canvas</h1>
+
+  <div id="toolbar">
+    <label>Tool:</label>
+    <button class="tool-btn active" id="btnDraw"   onclick="setTool('draw')">✏️ Draw</button>
+    <button class="tool-btn"        id="btnRect"   onclick="setTool('rect')">▭ Rect</button>
+    <button class="tool-btn"        id="btnCircle" onclick="setTool('circle')">○ Circle</button>
+    <button class="tool-btn"        id="btnLine"   onclick="setTool('line')">/ Line</button>
+
+    <div class="divider"></div>
+
+    <label>Color:</label>
+    <input type="color" id="colorPicker" value="#534AB7" title="Pick a color">
+
+    <label>Size:</label>
+    <input type="range" id="sizeSlider" min="1" max="40" value="5" step="1">
+    <span id="sizeOut">5</span>
+
+    <div class="divider"></div>
+
+    <button class="tool-btn" id="clearBtn" onclick="clearCanvas()">🗑️ Clear</button>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const canvas      = document.getElementById('canvas');
+    const ctx         = canvas.getContext('2d');
+    const colorPicker = document.getElementById('colorPicker');
+    const sizeSlider  = document.getElementById('sizeSlider');
+    const sizeOut     = document.getElementById('sizeOut');
+
+    let tool = 'draw';
+    let drawing = false;
+    let startX, startY, snapshot;
+
+    // ── Resize canvas to fit its display width ──────────────────────────────
+    function resizeCanvas() {
+      const w = canvas.parentElement.clientWidth;
+      const h = Math.round(w * 0.55);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      canvas.width  = Math.min(w, 800);
+      canvas.height = h;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.putImageData(img, 0, 0);
+    }
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // ── Size slider readout ─────────────────────────────────────────────────
+    sizeSlider.addEventListener('input', () => {
+      sizeOut.textContent = sizeSlider.value;
+    });
+
+    // ── Switch active tool ──────────────────────────────────────────────────
+    function setTool(t) {
+      tool = t;
+      document.querySelectorAll('.tool-btn[id^="btn"]').forEach(b => b.classList.remove('active'));
+      const id = 'btn' + t.charAt(0).toUpperCase() + t.slice(1);
+      document.getElementById(id).classList.add('active');
+    }
+
+    // ── Get mouse / touch position relative to canvas ──────────────────────
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const src  = e.touches ? e.touches[0] : e;
+      return {
+        x: (src.clientX - rect.left) * (canvas.width  / rect.width),
+        y: (src.clientY - rect.top)  * (canvas.height / rect.height)
+      };
+    }
+
+    // ── Start drawing ───────────────────────────────────────────────────────
+    function startDraw(e) {
+      drawing = true;
+      const p = getPos(e);
+      startX = p.x;
+      startY = p.y;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      e.preventDefault();
+    }
+
+    // ── While drawing ───────────────────────────────────────────────────────
+    function doDraw(e) {
+      if (!drawing) return;
+      const p = getPos(e);
+
+      ctx.strokeStyle = colorPicker.value;
+      ctx.fillStyle   = colorPicker.value + '44';   // semi-transparent fill for shapes
+      ctx.lineWidth   = parseInt(sizeSlider.value);
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+
+      if (tool === 'draw') {
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+
+      } else {
+        // Restore snapshot so previous ghost frames don't accumulate
+        ctx.putImageData(snapshot, 0, 0);
+        ctx.beginPath();
+
+        if (tool === 'rect') {
+          ctx.rect(startX, startY, p.x - startX, p.y - startY);
+          ctx.fill();
+          ctx.stroke();
+
+        } else if (tool === 'circle') {
+          const rx = Math.abs(p.x - startX) / 2;
+          const ry = Math.abs(p.y - startY) / 2;
+          const cx = startX + (p.x - startX) / 2;
+          const cy = startY + (p.y - startY) / 2;
+          ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+        } else if (tool === 'line') {
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+        }
+      }
+
+      e.preventDefault();
+    }
+
+    // ── Stop drawing ────────────────────────────────────────────────────────
+    function stopDraw() {
+      drawing = false;
+      ctx.beginPath();
+    }
+
+    // ── Clear the canvas ────────────────────────────────────────────────────
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // ── Mouse events ────────────────────────────────────────────────────────
+    canvas.addEventListener('mousedown',  startDraw);
+    canvas.addEventListener('mousemove',  doDraw);
+    canvas.addEventListener('mouseup',    stopDraw);
+    canvas.addEventListener('mouseleave', stopDraw);
+
+    // ── Touch events (mobile support) ────────────────────────────────────────
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove',  doDraw,    { passive: false });
+    canvas.addEventListener('touchend',   stopDraw);
+  </script>
+
+</body>
+</html>
